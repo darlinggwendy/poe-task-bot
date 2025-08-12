@@ -303,10 +303,14 @@ async def bot(request: Request):
     elif json_body.get("type") == "query":
         try:
             messages = json_body.get("query", [])
-            claude_messages = [
-                {"role": msg["role"], "content": msg["content"]}
-                for msg in messages if msg["role"] in ["user", "assistant"]
-            ]
+            claude_messages = []
+            for msg in messages:
+                if msg["role"] == "user":
+                    claude_messages.append({"role": "user", "content": msg["content"]})
+                elif msg["role"] == "bot" or msg["role"] == "assistant":
+                    claude_messages.append({"role": "assistant", "content": msg["content"]})
+            
+            # Add system prompt as a proper system message at the beginning
             claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
 
             response = client.messages.create(
