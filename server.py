@@ -256,76 +256,77 @@ async def bot(request: Request):
             "tools": tools
         }
 
-elif json_body.get("type") == "query":
-    try:
-        messages = json_body.get("query", [])
-        claude_messages = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in messages if msg["role"] in ["user", "assistant"]
-        ]
-        claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
+    elif json_body.get("type") == "query":
+        try:
+            messages = json_body.get("query", [])
+            claude_messages = [
+                {"role": msg["role"], "content": msg["content"]}
+                for msg in messages if msg["role"] in ["user", "assistant"]
+            ]
+            claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
 
-        response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=1024,
-            messages=claude_messages,
-            tools=tools
-        )
-        logger.info(f"Claude response: stop_reason={response.stop_reason}, content={response.content}")
-
-        output = "Sorry, I couldn’t understand the tool request."
-
-        if response.stop_reason == "tool_use" and hasattr(response.content[-1], "name"):
-            tool_use = response.content[-1]
-            tool_name = tool_use.name
-            tool_input = tool_use.input
-            tool_result = execute_tool(tool_name, tool_input)
-
-            claude_messages.append({"role": "assistant", "content": response.content})
-            claude_messages.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": tool_use.id,
-                    "content": json.dumps(tool_result)
-                }]
-            })
-
-            final_response = client.messages.create(
+            response = client.messages.create(
                 model="claude-3-5-haiku-20241022",
                 max_tokens=1024,
                 messages=claude_messages,
                 tools=tools
             )
-            logger.info(f"Final Claude response: stop_reason={final_response.stop_reason}, content={final_response.content}")
+            logger.info(f"Claude response: stop_reason={response.stop_reason}, content={response.content}")
 
-            if final_response.content and hasattr(final_response.content[0], "text"):
-                output = final_response.content[0].text
-            else:
-                output = "Sorry, I didn’t get a final response from Claude."
+            output = "Sorry, I couldn’t understand the tool request."
 
-        logger.info(f"Sending response to Poe: {output}")
+            if response.stop_reason == "tool_use" and hasattr(response.content[-1], "name"):
+                tool_use = response.content[-1]
+                tool_name = tool_use.name
+                tool_input = tool_use.input
+                tool_result = execute_tool(tool_name, tool_input)
 
-        def event_stream():
-            yield json.dumps({
-                "event": "message",
-                "content_type": "text/markdown",
-                "content": output
-            }) + "\n"
-            yield json.dumps({"event": "done"}) + "\n"
+                claude_messages.append({"role": "assistant", "content": response.content})
+                claude_messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": tool_use.id,
+                        "content": json.dumps(tool_result)
+                    }]
+                })
 
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
+                final_response = client.messages.create(
+                    model="claude-3-5-haiku-20241022",
+                    max_tokens=1024,
+                    messages=claude_messages,
+                    tools=tools
+                )
+                logger.info(f"Final Claude response: stop_reason={final_response.stop_reason}, content={final_response.content}")
 
-    except Exception as e:
-        logger.error(f"Error during query handling: {e}")
-        def error_stream():
-            yield json.dumps({
-                "event": "message",
-                "content_type": "text/markdown",
-                "content": "Oops! Something went wrong while processing your request."
-            }) + "\n"
-            yield json.dumps({"event": "done"}) + "\n"
-        return StreamingResponse(error_stream(), media_type="text/event-stream")
+                if final_response.content and hasattr(final_response.content[0], "text"):
+                    output = final_response.content[0].text
+                else:
+                    output = "Sorry, I didn’t get a final response from Claude."
+
+            logger.info(f"Sending response to Poe: {output}")
+
+            def event_stream():
+                yield json.dumps({
+                    "event": "message",
+                    "content_type": "text/markdown",
+                    "content": output
+                }) + "\n"
+                yield json.dumps({"event": "done"}) + "\n"
+
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+        except Exception as e:
+            logger.error(f"Error during query handling: {e}")
+            def error_stream():
+                yield json.dumps({
+                    "event": "message",
+                    "content_type": "text/markdown",
+                    "content": "Oops! Something went wrong while processing your request."
+                }) + "\n"
+                yield json.dumps({"event": "done"}) + "\n"
+            return StreamingResponse(error_stream(), media_type="text/event-stream")
+
 
 if __name__ == "__main__":
     import uvicorn
