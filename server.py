@@ -106,9 +106,13 @@ Before answering about tasks (current/due/this week), call `listRecords` (view="
 
 
 
-Updates
+Updates and Task Modifications
 
-When updating a record, only include fields in the update payload for which you have new or changed values. Do NOT update fields with empty strings, nulls, or blank values, unless instructed.
+When a user asks to update, complete, or modify a task:
+1. If you have the Record ID from recent conversation context, use update_task directly with that Record ID
+2. If you don't have the Record ID, first use get_task_by_name to find the task, then use update_task
+3. NEVER create a new task when the user wants to modify an existing one
+4. When updating a record, only include fields in the update payload for which you have new or changed values. Do NOT update fields with empty strings, nulls, or blank values, unless instructed.
 
 
 
@@ -206,6 +210,17 @@ tools = [
         }
     },
     {
+        "name": "get_task_by_name",
+        "description": "Find a task by searching for its name or description in Airtable.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_name": {"type": "string"}
+            },
+            "required": ["task_name"]
+        }
+    },
+    {
         "name": "createDailyContext",
         "description": "Create a new entry in Airtable Daily Context table for mood, energy, or events.",
         "input_schema": {
@@ -249,6 +264,14 @@ def execute_tool(tool_name, tool_input):
     elif tool_name == "update_task":
         record_id = tool_input["record_id"]
         return call_airtable(f"GPT%20master%20list/{record_id}", method="PATCH", data={"fields": tool_input["fields"]})
+    elif tool_name == "get_task_by_name":
+        # Search for task by name using Airtable's filterByFormula
+        task_name = tool_input["task_name"]
+        formula = f"SEARCH(LOWER('{task_name}'), LOWER({{Task Name}}))"
+        return call_airtable("GPT%20master%20list", params={
+            "view": "Current tasks only",
+            "filterByFormula": formula
+        })
     elif tool_name == "createDailyContext":
         return call_airtable("Daily%20Context", method="POST", data={"fields": tool_input["fields"]})
     raise ValueError(f"Unknown tool: {tool_name}")
