@@ -234,18 +234,27 @@ def execute_tool(tool_name, tool_input):
         return call_airtable("Daily%20Context", method="POST", data={"fields": tool_input["fields"]})
     raise ValueError(f"Unknown tool: {tool_name}")
 
+@app.get("/")
+async def health_check():
+    return {"status": "healthy"}
+
 @app.post("/")
 async def bot(request: Request):
     json_body = await request.json()
     logger.info(f"Received request body: {json_body}")  # Debug log
-    # Check authorization header instead of body
+    # Check authorization header
     auth_header = request.headers.get("Authorization")
     if not auth_header or auth_header.split(" ")[1] != POE_SERVER_KEY:
         logger.error("Unauthorized request")
         raise HTTPException(status_code=401, detail="Unauthorized")
     
-    if json_body["type"] == "query":
-        messages = json_body["query"]
+    if json_body.get("type") == "settings":
+        return {
+            "model": "claude-3-sonnet-20240229",
+            "tools": tools
+        }
+    elif json_body.get("type") == "query":
+        messages = json_body.get("query", [])
         # Format for Claude
         claude_messages = [{"role": msg["role"], "content": msg["content"]} for msg in messages if msg["role"] in ["user", "assistant"]]
         claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
@@ -277,6 +286,8 @@ async def bot(request: Request):
             output = response.content[0].text
 
         return {"type": "text", "text": output}
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported request type")
 
 if __name__ == "__main__":
     import uvicorn
