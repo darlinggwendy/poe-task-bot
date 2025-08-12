@@ -108,11 +108,15 @@ Before answering about tasks (current/due/this week), call `listRecords` (view="
 
 Updates and Task Modifications
 
-When a user asks to update, complete, or modify a task:
-1. If you have the Record ID from recent conversation context, use update_task directly with that Record ID
-2. If you don't have the Record ID, first use get_task_by_name to find the task, then use update_task
-3. NEVER create a new task when the user wants to modify an existing one
-4. When updating a record, only include fields in the update payload for which you have new or changed values. Do NOT update fields with empty strings, nulls, or blank values, unless instructed.
+CRITICAL: When a user asks to update, complete, modify, or change the status of a task:
+1. Look for a Record ID in the recent conversation history first
+2. If you find a Record ID from a recently created or mentioned task, use update_task with that exact Record ID
+3. If no Record ID is available, use get_task_by_name to search for the task, then update_task
+4. NEVER use create_task when the user wants to modify an existing task
+5. Phrases like "mark as done", "update status", "change priority", "mark complete" always mean UPDATE, not CREATE
+6. When updating a record, only include fields in the update payload for which you have new or changed values. Do NOT update fields with empty strings, nulls, or blank values, unless instructed.
+
+If the user says "mark the status as done" or similar, this means they want to update the task they just created or referenced, NOT create a new task.
 
 
 
