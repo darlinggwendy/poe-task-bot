@@ -185,9 +185,16 @@ Use Record ID field to RECORD_ID() for accurate IDs. Verify ID before updates. I
 
 
 
-Task Creation
+Task Matching and Natural Language
 
-If user refers to a task, don't store it in memory—check Airtable for a matching task, then update with provided info. If no match, create a new task. Never suggest tasks not in Airtable unless tied to existing ones."""
+When users refer to tasks using casual or conversational language, extract the core task concept for searching:
+- "I cleaned my teeth" → search for "teeth" or "brush"
+- "dropped off the package" → search for "package" or "fedex" 
+- "did the dishes" → search for "dishes"
+- "fed the cat" → search for "cat" or "feed"
+- "took out trash" → search for "trash" or "garbage"
+
+Use your understanding of what the user actually did to find the most likely matching task name. Don't search for their exact casual phrasing - search for the key task-related words that would appear in a task name."""
 
 client = Anthropic(api_key=ANTHROPIC_API_KEY, http_client=None)
 
@@ -274,13 +281,40 @@ def execute_tool(tool_name, tool_input):
         record_id = tool_input["record_id"]
         return call_airtable(f"GPT%20master%20list/{record_id}", method="PATCH", data={"fields": tool_input["fields"]})
     elif tool_name == "get_task_by_name":
-        # Search for task by name using Airtable's filterByFormula
-        task_name = tool_input["task_name"]
-        formula = f"SEARCH(LOWER('{task_name}'), LOWER({{Task Name}}))"
-        return call_airtable("GPT%20master%20list", params={
-            "view": "Current tasks only",
-            "filterByFormula": formula
-        })
+        # Enhanced search for task by name using multiple strategies
+        task_name = tool_input["task_name"].lower().strip()
+        
+        # Strategy 1: Exact substring match (current approach)
+        formula1 = f"SEARCH(LOWER('{task_name}'), LOWER({{Task Name}}))"
+        
+        # Strategy 2: Split into keywords and match any
+        keywords = task_name.split()
+        if len(keywords) > 1:
+            keyword_searches = []
+            for keyword in keywords:
+                if len(keyword) > 2:  # Skip very short words
+                    keyword_searches.append(f"SEARCH(LOWER('{keyword}'), LOWER({{Task Name}}))")
+            if keyword_searches:
+                formula2 = f"OR({', '.join(keyword_searches)})"
+            else:
+                formula2 = formula1
+        else:
+            formula2 = formula1
+        
+        # Try exact match first, then keyword match
+        for formula in [formula1, formula2]:
+            try:
+                result = call_airtable("GPT%20master%20list", params={
+                    "view": "Current tasks only",
+                    "filterByFormula": formula
+                })
+                if result.get("records"):
+                    return result
+            except:
+                continue
+        
+        # If no results, return empty result
+        return {"records": []}
     elif tool_name == "createDailyContext":
         return call_airtable("Daily%20Context", method="POST", data={"fields": tool_input["fields"]})
     raise ValueError(f"Unknown tool: {tool_name}")
