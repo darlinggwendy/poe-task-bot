@@ -310,36 +310,25 @@ async def bot(request: Request):
 
             logger.info(f"Sending response to Poe: {output}")
 
-            # FIXED: Use plain Response instead of StreamingResponse
-            # Format as proper SSE manually
-            message_data = json.dumps({
-                'content_type': 'text/markdown', 
-                'content': output
-            })
-            logger.info(f"Streaming message data: {message_data}")
-            
-            # Build SSE response manually
-            sse_content = f"event: message\ndata: {message_data}\n\nevent: done\ndata: {{}}\n\n"
+            # FIXED: Use correct Poe event types - "text" not "message"
+            # Build SSE response manually with correct event types
+            sse_content = f"event: text\ndata: {json.dumps({'text': output})}\n\nevent: done\ndata: {{}}\n\n"
+            logger.info(f"SSE content: {repr(sse_content)}")
             
             return Response(
                 content=sse_content,
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no"
+                    "Connection": "keep-alive"
                 }
             )
 
         except Exception as e:
             logger.error(f"Error during query handling: {e}")
             
-            # Error response as plain SSE
-            error_data = json.dumps({
-                'content_type': 'text/markdown', 
-                'content': 'Oops! Something went wrong while processing your request.'
-            })
-            error_sse = f"event: message\ndata: {error_data}\n\nevent: done\ndata: {{}}\n\n"
+            # Error response with correct Poe event types
+            error_sse = f"event: error\ndata: {json.dumps({'text': 'Oops! Something went wrong while processing your request.'})}\n\nevent: done\ndata: {{}}\n\n"
             
             return Response(
                 content=error_sse,
