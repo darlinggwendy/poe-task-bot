@@ -4,7 +4,7 @@ import requests
 from fastapi import FastAPI, Request, HTTPException
 import logging
 from anthropic import Anthropic
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 import asyncio
 
 app = FastAPI()
@@ -310,52 +310,39 @@ async def bot(request: Request):
 
             logger.info(f"Sending response to Poe: {output}")
 
-            # FIXED: Force proper SSE streaming by encoding strings as bytes
-            async def event_stream():
-                # Log what we're about to stream for debugging
-                message_data = json.dumps({
-                    'content_type': 'text/markdown', 
-                    'content': output
-                })
-                logger.info(f"Streaming message data: {message_data}")
-                
-                # Stream as bytes to force proper SSE formatting
-                yield f"event: message\n".encode('utf-8')
-                yield f"data: {message_data}\n\n".encode('utf-8')
-                
-                # Add a small delay to ensure proper streaming
-                await asyncio.sleep(0.01)
-                
-                # Stream the done event
-                yield f"event: done\n".encode('utf-8')
-                yield f"data: {{}}\n\n".encode('utf-8')
-
-            return StreamingResponse(
-                event_stream(), 
+            # FIXED: Use plain Response instead of StreamingResponse
+            # Format as proper SSE manually
+            message_data = json.dumps({
+                'content_type': 'text/markdown', 
+                'content': output
+            })
+            logger.info(f"Streaming message data: {message_data}")
+            
+            # Build SSE response manually
+            sse_content = f"event: message\ndata: {message_data}\n\nevent: done\ndata: {{}}\n\n"
+            
+            return Response(
+                content=sse_content,
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no"  # Disable nginx buffering
+                    "X-Accel-Buffering": "no"
                 }
             )
 
         except Exception as e:
             logger.error(f"Error during query handling: {e}")
             
-            async def error_stream():
-                error_data = json.dumps({
-                    'content_type': 'text/markdown', 
-                    'content': 'Oops! Something went wrong while processing your request.'
-                })
-                yield f"event: message\n".encode('utf-8')
-                yield f"data: {error_data}\n\n".encode('utf-8')
-                await asyncio.sleep(0.01)
-                yield f"event: done\n".encode('utf-8')
-                yield f"data: {{}}\n\n".encode('utf-8')
-                
-            return StreamingResponse(
-                error_stream(), 
+            # Error response as plain SSE
+            error_data = json.dumps({
+                'content_type': 'text/markdown', 
+                'content': 'Oops! Something went wrong while processing your request.'
+            })
+            error_sse = f"event: message\ndata: {error_data}\n\nevent: done\ndata: {{}}\n\n"
+            
+            return Response(
+                content=error_sse,
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
