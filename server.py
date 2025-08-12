@@ -310,7 +310,7 @@ async def bot(request: Request):
 
             logger.info(f"Sending response to Poe: {output}")
 
-            # FIXED: Proper SSE streaming with async generator
+            # FIXED: Force proper SSE streaming by encoding strings as bytes
             async def event_stream():
                 # Log what we're about to stream for debugging
                 message_data = json.dumps({
@@ -319,16 +319,16 @@ async def bot(request: Request):
                 })
                 logger.info(f"Streaming message data: {message_data}")
                 
-                # Stream the message event
-                yield f"event: message\n"
-                yield f"data: {message_data}\n\n"
+                # Stream as bytes to force proper SSE formatting
+                yield f"event: message\n".encode('utf-8')
+                yield f"data: {message_data}\n\n".encode('utf-8')
                 
                 # Add a small delay to ensure proper streaming
                 await asyncio.sleep(0.01)
                 
                 # Stream the done event
-                yield f"event: done\n"
-                yield f"data: {{}}\n\n"
+                yield f"event: done\n".encode('utf-8')
+                yield f"data: {{}}\n\n".encode('utf-8')
 
             return StreamingResponse(
                 event_stream(), 
@@ -336,8 +336,7 @@ async def bot(request: Request):
                 headers={
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Headers": "Cache-Control"
+                    "X-Accel-Buffering": "no"  # Disable nginx buffering
                 }
             )
 
@@ -349,11 +348,11 @@ async def bot(request: Request):
                     'content_type': 'text/markdown', 
                     'content': 'Oops! Something went wrong while processing your request.'
                 })
-                yield f"event: message\n"
-                yield f"data: {error_data}\n\n"
+                yield f"event: message\n".encode('utf-8')
+                yield f"data: {error_data}\n\n".encode('utf-8')
                 await asyncio.sleep(0.01)
-                yield f"event: done\n"
-                yield f"data: {{}}\n\n"
+                yield f"event: done\n".encode('utf-8')
+                yield f"data: {{}}\n\n".encode('utf-8')
                 
             return StreamingResponse(
                 error_stream(), 
