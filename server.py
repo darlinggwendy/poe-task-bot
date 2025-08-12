@@ -256,72 +256,69 @@ async def bot(request: Request):
             "tools": tools
         }
 
-elif json_body.get("type") == "query":
-    try:
-        messages = json_body.get("query", [])
-        claude_messages = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in messages if msg["role"] in ["user", "assistant"]
-        ]
-        claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
+    elif json_body.get("type") == "query":
+        try:
+            messages = json_body.get("query", [])
+            claude_messages = [
+                {"role": msg["role"], "content": msg["content"]}
+                for msg in messages if msg["role"] in ["user", "assistant"]
+            ]
+            claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
 
-        response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=1024,
-            messages=claude_messages,
-            tools=tools
-        )
+            response = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=1024,
+                messages=claude_messages,
+                tools=tools
+            )
 
-        output = response.content[0].text if response.content and response.content[0].text else "Sorry, I didn’t get a response from Claude."
+            if response.stop_reason == "tool_use" and hasattr(response.content[-1], "name"):
+                tool_use = response.content[-1]
+                tool_name = tool_use.name
+                tool_input = tool_use.input
+                tool_result = execute_tool(tool_name, tool_input)
 
-if response.stop_reason == "tool_use" and hasattr(response.content[-1], "name"):
-    tool_use = response.content[-1]
-    tool_name = tool_use.name
-    tool_input = tool_use.input
-    tool_result = execute_tool(tool_name, tool_input)
+                claude_messages.append({"role": "assistant", "content": response.content})
+                claude_messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": tool_use.id,
+                        "content": json.dumps(tool_result)
+                    }]
+                })
 
-    claude_messages.append({"role": "assistant", "content": response.content})
-    claude_messages.append({
-        "role": "user",
-        "content": [{
-            "type": "tool_result",
-            "tool_use_id": tool_use.id,
-            "content": json.dumps(tool_result)
-        }]
-    })
+                final_response = client.messages.create(
+                    model="claude-3-5-haiku-20241022",
+                    max_tokens=1024,
+                    messages=claude_messages,
+                    tools=tools
+                )
+                output = final_response.content[0].text if final_response.content and final_response.content[0].text else "Sorry, I didn’t get a final response from Claude."
 
-    final_response = client.messages.create(
-        model="claude-3-5-haiku-20241022",
-        max_tokens=1024,
-        messages=claude_messages,
-        tools=tools
-    )
-    output = final_response.content[0].text if final_response.content and final_response.content[0].text else "Sorry, I didn’t get a final response from Claude."
+            else:
+                output = "Sorry, I couldn’t understand the tool request."
 
-else:
-    output = "Sorry, I couldn’t understand the tool request."
+            def event_stream():
+                yield json.dumps({
+                    "event": "message",
+                    "content_type": "text/markdown",
+                    "content": output
+                }) + "\n"
+                yield json.dumps({"event": "done"}) + "\n"
 
-        def event_stream():
-            yield json.dumps({
-                "event": "message",
-                "content_type": "text/markdown",
-                "content": output
-            }) + "\n"
-            yield json.dumps({"event": "done"}) + "\n"
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-    except Exception as e:
-        logger.error(f"Error during query handling: {e}")
-        def error_stream():
-            yield json.dumps({
-                "event": "message",
-                "content_type": "text/markdown",
-                "content": "Oops! Something went wrong while processing your request."
-            }) + "\n"
-            yield json.dumps({"event": "done"}) + "\n"
-        return StreamingResponse(error_stream(), media_type="text/event-stream")
-
+        except Exception as e:
+            logger.error(f"Error during query handling: {e}")
+            def error_stream():
+                yield json.dumps({
+                    "event": "message",
+                    "content_type": "text/markdown",
+                    "content": "Oops! Something went wrong while processing your request."
+                }) + "\n"
+                yield json.dumps({"event": "done"}) + "\n"
+            return StreamingResponse(error_stream(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     import uvicorn
