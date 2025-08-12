@@ -376,6 +376,8 @@ async def bot(request: Request):
                 output = current_response.content[0].text
             else:
                 output = "Sorry, I didn't get a final response from Claude."
+            
+            # Handle direct responses without tool use  
             elif response.stop_reason == "end_turn" and response.content:
                 # Handle direct responses without tool use
                 if hasattr(response.content[0], "text"):
