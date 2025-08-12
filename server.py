@@ -307,25 +307,18 @@ async def bot(request: Request):
             logger.info(f"Sending response to Poe: {output}")
 
             def event_stream():
-                yield json.dumps({
-                    "event": "message",
-                    "content_type": "text/markdown",
-                    "content": output
-                }) + "\n"
-                yield json.dumps({"event": "done"}) + "\n"
+                yield f"event: message\ndata: {json.dumps({'content_type': 'text/markdown', 'content': output})}\n\n"
+                yield "event: done\ndata: {}\n\n"
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
 
         except Exception as e:
             logger.error(f"Error during query handling: {e}")
             def error_stream():
-                yield json.dumps({
-                    "event": "message",
-                    "content_type": "text/markdown",
-                    "content": "Oops! Something went wrong while processing your request."
-                }) + "\n"
-                yield json.dumps({"event": "done"}) + "\n"
+                yield f"event: message\ndata: {json.dumps({'content_type': 'text/markdown', 'content': 'Oops! Something went wrong while processing your request.'})}\n\n"
+                yield "event: done\ndata: {}\n\n"
             return StreamingResponse(error_stream(), media_type="text/event-stream")
+
 
 
 if __name__ == "__main__":
