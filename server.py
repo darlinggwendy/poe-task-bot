@@ -194,6 +194,18 @@ tools = [
         }
     },
     {
+        "name": "update_task",
+        "description": "Update an existing task in Airtable by Record ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "record_id": {"type": "string"},
+                "fields": {"type": "object"}
+            },
+            "required": ["record_id", "fields"]
+        }
+    },
+    {
         "name": "createDailyContext",
         "description": "Create a new entry in Airtable Daily Context table for mood, energy, or events.",
         "input_schema": {
@@ -226,12 +238,17 @@ def call_airtable(endpoint, method="GET", data=None, params=None):
         return requests.get(url, headers=headers, params=params).json()
     elif method == "POST":
         return requests.post(url, headers=headers, json=data).json()
+    elif method == "PATCH":
+        return requests.patch(url, headers=headers, json=data).json()
 
 def execute_tool(tool_name, tool_input):
     if tool_name == "list_current_tasks":
         return call_airtable("GPT%20master%20list", params={"view": "Current tasks only"})
     elif tool_name == "create_task":
         return call_airtable("GPT%20master%20list", method="POST", data={"fields": tool_input["fields"]})
+    elif tool_name == "update_task":
+        record_id = tool_input["record_id"]
+        return call_airtable(f"GPT%20master%20list/{record_id}", method="PATCH", data={"fields": tool_input["fields"]})
     elif tool_name == "createDailyContext":
         return call_airtable("Daily%20Context", method="POST", data={"fields": tool_input["fields"]})
     raise ValueError(f"Unknown tool: {tool_name}")
