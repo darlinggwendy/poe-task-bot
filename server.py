@@ -306,11 +306,11 @@ async def bot(request: Request):
 
             logger.info(f"Sending response to Poe: {output}")
 
-            def event_stream():
-                yield f"event: message\ndata: {json.dumps({'content_type': 'text/markdown', 'content': output})}\n\n"
+            def event_stream(output_text):
+                yield f"event: message\ndata: {json.dumps({'content_type': 'text/markdown', 'content': output_text})}\n\n"
                 yield "event: done\ndata: {}\n\n"
 
-            return StreamingResponse(event_stream(), media_type="text/event-stream")
+            return StreamingResponse(event_stream(output), media_type="text/event-stream")
 
         except Exception as e:
             logger.error(f"Error during query handling: {e}")
