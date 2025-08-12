@@ -328,56 +328,56 @@ async def bot(request: Request):
 
             output = "Sorry, I couldn't understand the tool request."
 
-            # Handle multiple tool calls in sequence
-            current_response = response
-            
-            while current_response.stop_reason == "tool_use":
-                # Execute all tool calls in this response
-                tool_results = []
+            if response.stop_reason == "tool_use":
+                # Handle multiple tool calls in sequence
+                current_response = response
                 
-                for content_block in current_response.content:
-                    if hasattr(content_block, "name"):  # This is a tool use block
-                        tool_name = content_block.name
-                        tool_input = content_block.input
-                        logger.info(f"Executing tool: {tool_name} with input: {tool_input}")
-                        
-                        try:
-                            tool_result = execute_tool(tool_name, tool_input)
-                            logger.info(f"Tool {tool_name} result: {tool_result}")
+                while current_response.stop_reason == "tool_use":
+                    # Execute all tool calls in this response
+                    tool_results = []
+                    
+                    for content_block in current_response.content:
+                        if hasattr(content_block, "name"):  # This is a tool use block
+                            tool_name = content_block.name
+                            tool_input = content_block.input
+                            logger.info(f"Executing tool: {tool_name} with input: {tool_input}")
                             
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": content_block.id,
-                                "content": json.dumps(tool_result)
-                            })
-                        except Exception as e:
-                            logger.error(f"Tool {tool_name} failed: {e}")
-                            tool_results.append({
-                                "type": "tool_result", 
-                                "tool_use_id": content_block.id,
-                                "content": json.dumps({"error": str(e)})
-                            })
+                            try:
+                                tool_result = execute_tool(tool_name, tool_input)
+                                logger.info(f"Tool {tool_name} result: {tool_result}")
+                                
+                                tool_results.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": content_block.id,
+                                    "content": json.dumps(tool_result)
+                                })
+                            except Exception as e:
+                                logger.error(f"Tool {tool_name} failed: {e}")
+                                tool_results.append({
+                                    "type": "tool_result", 
+                                    "tool_use_id": content_block.id,
+                                    "content": json.dumps({"error": str(e)})
+                                })
 
-                # Add assistant response and tool results to message history
-                claude_messages.append({"role": "assistant", "content": current_response.content})
-                claude_messages.append({"role": "user", "content": tool_results})
+                    # Add assistant response and tool results to message history
+                    claude_messages.append({"role": "assistant", "content": current_response.content})
+                    claude_messages.append({"role": "user", "content": tool_results})
 
-                # Get next response from Claude
-                current_response = client.messages.create(
-                    model="claude-3-5-haiku-20241022",
-                    max_tokens=1024,
-                    messages=claude_messages,
-                    tools=tools
-                )
-                logger.info(f"Next Claude response: stop_reason={current_response.stop_reason}, content={current_response.content}")
+                    # Get next response from Claude
+                    current_response = client.messages.create(
+                        model="claude-3-5-haiku-20241022",
+                        max_tokens=1024,
+                        messages=claude_messages,
+                        tools=tools
+                    )
+                    logger.info(f"Next Claude response: stop_reason={current_response.stop_reason}, content={current_response.content}")
 
-            # Final response after all tools are complete
-            if current_response.content and hasattr(current_response.content[0], "text"):
-                output = current_response.content[0].text
-            else:
-                output = "Sorry, I didn't get a final response from Claude."
-            
-            # Handle direct responses without tool use  
+                # Final response after all tools are complete
+                if current_response.content and hasattr(current_response.content[0], "text"):
+                    output = current_response.content[0].text
+                else:
+                    output = "Sorry, I didn't get a final response from Claude."
+                    
             elif response.stop_reason == "end_turn" and response.content:
                 # Handle direct responses without tool use
                 if hasattr(response.content[0], "text"):
