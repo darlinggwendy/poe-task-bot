@@ -4,6 +4,8 @@ import requests
 from fastapi import FastAPI, Request, HTTPException
 import logging
 from anthropic import Anthropic
+from fastapi.responses import StreamingResponse
+import asyncio
 
 app = FastAPI()
 
@@ -112,21 +114,21 @@ When updating a record, only include fields in the update payload for which you 
 
 Inference Logic
 
-Infer missing fields from user’s tone/phrasing:
+Infer missing fields from user's tone/phrasing:
 
-- “Follow up soon” → soft Deadline Type, Due Date in 3-5 days.
+- "Follow up soon" → soft Deadline Type, Due Date in 3-5 days.
 
-- “Stressing me out” → high Mind Weight, high Impact of Not Doing.
+- "Stressing me out" → high Mind Weight, high Impact of Not Doing.
 
-- “Quick win” → low Resistance, low Energy, medium/high Reward.
+- "Quick win" → low Resistance, low Energy, medium/high Reward.
 
-- “Can’t start until Monday” → hard Start Date Type.
+- "Can't start until Monday" → hard Start Date Type.
 
-- “Can wait” → soft Start Date (tomorrow).
+- "Can wait" → soft Start Date (tomorrow).
 
-- “If I have time” → low Priority, soft Task Dependencies.
+- "If I have time" → low Priority, soft Task Dependencies.
 
-If user says “Add task to inbox,” set `Inbox` to true, defer clarification. Ask for missing required fields.
+If user says "Add task to inbox," set `Inbox` to true, defer clarification. Ask for missing required fields.
 
 
 
@@ -140,9 +142,9 @@ Daily Context
 
 Table: Daily Context, view: Grid view.
 
-Why: Tracks mood, energy, availability, and events to align tasks with user’s state (e.g., low energy → low-effort tasks, party tomorrow → prioritize housework).
+Why: Tracks mood, energy, availability, and events to align tasks with user's state (e.g., low energy → low-effort tasks, party tomorrow → prioritize housework).
 
-When: Automatically log to Daily Context when user mentions mood, energy, availability, or events (e.g., “It’s really hot outside today” → log in Weather/Notes, Entry Timestamp = 2025-08-11T17:52:00Z). Check before suggesting tasks or scheduling to match user’s state. Log any contextual insights that don’t map to a task in Daily Context to preserve across sessions.
+When: Automatically log to Daily Context when user mentions mood, energy, availability, or events (e.g., "It's really hot outside today" → log in Weather/Notes, Entry Timestamp = 2025-08-11T17:52:00Z). Check before suggesting tasks or scheduling to match user's state. Log any contextual insights that don't map to a task in Daily Context to preserve across sessions.
 
 How: Use `listDailyContext` to read recent entries (view="Grid view"). Use Entry Timestamp for timing, Logged At for recency. Create new entry with `createDailyContext` for mood/energy/events. Use most recent entry if multiple apply.
 
@@ -150,17 +152,17 @@ Fields:
 
 - Logged At: Formula (DATETIME_FORMAT(SET_TIMEZONE(CREATED_TIME(), 'America/Los_Angeles'), 'LLLL')) – when entry was submitted.
 
-- Entry Timestamp: User-specified time (UTC ISO 8601, e.g., “6 PM tomorrow” → 2025-08-12T01:00:00Z).
+- Entry Timestamp: User-specified time (UTC ISO 8601, e.g., "6 PM tomorrow" → 2025-08-12T01:00:00Z).
 
 - Mental/Physical Energy Available, Focus Level: extra low, low, medium, high, extra high.
 
-- Mood, Availability, Weather, Notes: Freeform text (e.g., “Hot outside, prefer indoor tasks” in Weather/Notes).
+- Mood, Availability, Weather, Notes: Freeform text (e.g., "Hot outside, prefer indoor tasks" in Weather/Notes).
 
 
 
 Repeating Tasks
 
-On completion: Update `Last Done` (UTC ISO 8601), set Status to “done.” Automation handles future cycles. Check for follow-ups or dependent tasks.
+On completion: Update `Last Done` (UTC ISO 8601), set Status to "done." Automation handles future cycles. Check for follow-ups or dependent tasks.
 
 
 
@@ -172,7 +174,7 @@ Use Record ID field to RECORD_ID() for accurate IDs. Verify ID before updates. I
 
 Task Creation
 
-If user refers to a task, don’t store it in memory—check Airtable for a matching task, then update with provided info. If no match, create a new task. Never suggest tasks not in Airtable unless tied to existing ones."""
+If user refers to a task, don't store it in memory—check Airtable for a matching task, then update with provided info. If no match, create a new task. Never suggest tasks not in Airtable unless tied to existing ones."""
 
 client = Anthropic(api_key=ANTHROPIC_API_KEY, http_client=None)
 
@@ -238,8 +240,6 @@ def execute_tool(tool_name, tool_input):
 async def health_check():
     return {"status": "healthy"}
 
-from fastapi.responses import StreamingResponse
-
 @app.post("/")
 async def bot(request: Request):
     json_body = await request.json()
@@ -273,7 +273,7 @@ async def bot(request: Request):
             )
             logger.info(f"Claude response: stop_reason={response.stop_reason}, content={response.content}")
 
-            output = "Sorry, I couldn’t understand the tool request."
+            output = "Sorry, I couldn't understand the tool request."
 
             if response.stop_reason == "tool_use" and hasattr(response.content[-1], "name"):
                 tool_use = response.content[-1]
@@ -302,22 +302,75 @@ async def bot(request: Request):
                 if final_response.content and hasattr(final_response.content[0], "text"):
                     output = final_response.content[0].text
                 else:
-                    output = "Sorry, I didn’t get a final response from Claude."
+                    output = "Sorry, I didn't get a final response from Claude."
+            elif response.stop_reason == "end_turn" and response.content:
+                # Handle direct responses without tool use
+                if hasattr(response.content[0], "text"):
+                    output = response.content[0].text
 
             logger.info(f"Sending response to Poe: {output}")
 
-            def event_stream(output_text):
-                yield f"event: message\ndata: {json.dumps({'content_type': 'text/markdown', 'content': output_text})}\n\n"
-                yield "event: done\ndata: {}\n\n"
+            # FIXED: Proper SSE streaming with async generator
+            async def event_stream():
+                # Log what we're about to stream for debugging
+                message_data = json.dumps({
+                    'content_type': 'text/markdown', 
+                    'content': output
+                })
+                logger.info(f"Streaming message data: {message_data}")
+                
+                # Stream the message event
+                yield f"event: message\n"
+                yield f"data: {message_data}\n\n"
+                
+                # Add a small delay to ensure proper streaming
+                await asyncio.sleep(0.01)
+                
+                # Stream the done event
+                yield f"event: done\n"
+                yield f"data: {{}}\n\n"
 
-            return StreamingResponse(event_stream(output), media_type="text/event-stream")
+            return StreamingResponse(
+                event_stream(), 
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Cache-Control"
+                }
+            )
 
         except Exception as e:
             logger.error(f"Error during query handling: {e}")
-            def error_stream():
-                yield f"event: message\ndata: {json.dumps({'content_type': 'text/markdown', 'content': 'Oops! Something went wrong while processing your request.'})}\n\n"
-                yield "event: done\ndata: {}\n\n"
-            return StreamingResponse(error_stream(), media_type="text/event-stream")
+            
+            async def error_stream():
+                error_data = json.dumps({
+                    'content_type': 'text/markdown', 
+                    'content': 'Oops! Something went wrong while processing your request.'
+                })
+                yield f"event: message\n"
+                yield f"data: {error_data}\n\n"
+                await asyncio.sleep(0.01)
+                yield f"event: done\n"
+                yield f"data: {{}}\n\n"
+                
+            return StreamingResponse(
+                error_stream(), 
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive"
+                }
+            )
+
+    # Handle other request types (like report_error)
+    elif json_body.get("type") == "report_error":
+        logger.info(f"Received error report: {json_body.get('message', 'No message')}")
+        return {"status": "acknowledged"}
+
+    # Default response for unknown request types
+    return {"status": "unknown_request_type"}
 
 if __name__ == "__main__":
     import uvicorn
