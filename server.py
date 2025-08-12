@@ -250,7 +250,7 @@ async def bot(request: Request):
     
     if json_body.get("type") == "settings":
         return {
-            "model": "claude-3-sonnet-20240229",
+            "model": "claude-3-5-haiku-20241022",
             "tools": tools
         }
     elif json_body.get("type") == "query":
@@ -260,7 +260,7 @@ async def bot(request: Request):
         claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
 
         response = client.messages.create(
-            model="claude-3-sonnet-20240229",
+            model="claude-3-5-haiku-20241022",
             max_tokens=1024,
             messages=claude_messages,
             tools=tools
@@ -276,7 +276,7 @@ async def bot(request: Request):
             claude_messages.append({"role": "assistant", "content": response.content})
             claude_messages.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_use.id, "content": json.dumps(tool_result)}]})
             final_response = client.messages.create(
-                model="claude-3-sonnet-20240229",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=1024,
                 messages=claude_messages,
                 tools=tools
