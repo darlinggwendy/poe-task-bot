@@ -319,8 +319,6 @@ async def bot(request: Request):
                 yield "event: done\ndata: {}\n\n"
             return StreamingResponse(error_stream(), media_type="text/event-stream")
 
-
-
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
