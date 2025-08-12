@@ -272,6 +272,8 @@ async def bot(request: Request):
                 tools=tools
             )
 
+            logger.info(f"Claude response: stop_reason={response.stop_reason}, content={response.content}")
+
             if response.stop_reason == "tool_use" and hasattr(response.content[-1], "name"):
                 tool_use = response.content[-1]
                 tool_name = tool_use.name
@@ -294,6 +296,9 @@ async def bot(request: Request):
                     messages=claude_messages,
                     tools=tools
                 )
+
+                logger.info(f"Final Claude response: stop_reason={final_response.stop_reason}, content={final_response.content}")
+                
                 output = final_response.content[0].text if final_response.content and final_response.content[0].text else "Sorry, I didn’t get a final response from Claude."
 
             else:
