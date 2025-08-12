@@ -3,6 +3,7 @@ import os
 import requests
 from fastapi import FastAPI, Request, HTTPException
 import logging
+from anthropic import Anthropic
 
 app = FastAPI()
 
