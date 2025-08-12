@@ -260,7 +260,7 @@ async def bot(request: Request):
         claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
 
         response = client.messages.create(
-            model="claude-3-sonnet-20240229",
+            model="claude-3-5-haiku-20241022",
             max_tokens=1024,
             messages=claude_messages,
             tools=tools
