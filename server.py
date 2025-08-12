@@ -238,25 +238,30 @@ def execute_tool(tool_name, tool_input):
 async def health_check():
     return {"status": "healthy"}
 
+from fastapi.responses import StreamingResponse
+
 @app.post("/")
 async def bot(request: Request):
     json_body = await request.json()
-    logger.info(f"Received request body: {json_body}")  # Debug log
-    # Check authorization header
+    logger.info(f"Received request body: {json_body}")
+
     auth_header = request.headers.get("Authorization")
     if not auth_header or auth_header.split(" ")[1] != POE_SERVER_KEY:
         logger.error("Unauthorized request")
         raise HTTPException(status_code=401, detail="Unauthorized")
-    
+
     if json_body.get("type") == "settings":
         return {
             "model": "claude-3-5-haiku-20241022",
             "tools": tools
         }
+
     elif json_body.get("type") == "query":
         messages = json_body.get("query", [])
-        # Format for Claude
-        claude_messages = [{"role": msg["role"], "content": msg["content"]} for msg in messages if msg["role"] in ["user", "assistant"]]
+        claude_messages = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in messages if msg["role"] in ["user", "assistant"]
+        ]
         claude_messages.insert(0, {"role": "user", "content": SYSTEM_PROMPT})
 
         response = client.messages.create(
@@ -272,9 +277,17 @@ async def bot(request: Request):
             tool_name = tool_use.name
             tool_input = tool_use.input
             tool_result = execute_tool(tool_name, tool_input)
-            # Feed back to Claude for final response
+
             claude_messages.append({"role": "assistant", "content": response.content})
-            claude_messages.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_use.id, "content": json.dumps(tool_result)}]})
+            claude_messages.append({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": tool_use.id,
+                    "content": json.dumps(tool_result)
+                }]
+            })
+
             final_response = client.messages.create(
                 model="claude-3-5-haiku-20241022",
                 max_tokens=1024,
@@ -285,7 +298,16 @@ async def bot(request: Request):
         else:
             output = response.content[0].text
 
-        return {"type": "text", "text": output}
+        def event_stream():
+            yield json.dumps({
+                "event": "message",
+                "content_type": "text/markdown",
+                "content": output
+            }) + "\n"
+            yield json.dumps({"event": "done"}) + "\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
     else:
         raise HTTPException(status_code=400, detail="Unsupported request type")
 
